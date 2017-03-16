@@ -1,0 +1,97 @@
+#!/bin/bash
+
+GIT_PULLS_VESION="0.0.1"
+
+function contains() {
+  target=$1
+  shift
+  paths=$(echo $@ | tr -s ' ' ' ')
+  if [ "${paths[1]}" == " " ]; then
+    flag=$(echo $target | grep ${paths[0]})
+    if [[ -n $flag ]]; then
+      return 0
+    fi
+  else
+    for ((i=0;i < ${#paths[@]};i++)) {
+      if [ ${paths[$i]} == [] ]; then
+        continue
+      fi
+      flag=$(echo $target | grep ${paths[$i]})
+      if [[ -n $flag  ]]; then
+        return  0
+      fi
+    }
+  fi
+
+  return 1
+}
+
+function formArrayPaths() {
+  exclude_paths=$(echo $1 | tr -s ',' ' ')
+  for ((i=0;i < ${#exclude_paths[@]};i++)) {
+    path=${exclude_paths[$i]}
+    flag=$(echo $path | grep $EXECUTING_PLACE)
+    if [ -n $flag ] && [ $i -ne 0 ] && ([ ${path:0:1} == "/" ] || [ ${path:0:1} == "~" ]); then
+      num=$(( ${#path} - 1))
+      exclude_paths[$i]="$EXECUTING_PLACE${path:1:num}"
+    fi
+  }
+  echo ${exclude_paths[@]}
+}
+
+if [ -z $1 ]; then
+  echo 'Usage: git-pulls [-h] [-e /exclusivePath1/to,/exclusivePath2/to,/exclusivePath3/to ] /path/to'
+  exit
+fi
+
+EXECUTING_PLACE=$PWD
+trap "cd $EXECUTING_PLACE && exit" {1,2,3,15}
+
+FLAG=true
+origin=$HOME
+exclude_paths=[]
+
+if [ ${1:0:1} != "-" ]; then
+  origin=$1
+  shift 1
+  FLAG=false
+fi
+
+while getopts ":e:hv" OPT ;
+do
+  case $OPT in
+  e)
+    result=$(formArrayPaths $OPTARG)
+    exclude_paths=${result[@]}
+    ;;
+  h)
+    echo 'Usage: git-pulls [-h] [-e /exclusivePath1/to,/exclusivePath2/to,/exclusivePath3/to ] /path/to'
+    exit
+    ;;
+  v)
+    echo "git-pulls version $GIT_PULLS_VESION"
+    exit
+    ;;
+  esac
+done
+
+SHIFT_NUM=$((OPTIND - 2))
+if [ $SHIFT_NUM -gt 0 ]; then
+  shift $SHIFT_NUM
+fi
+
+if $FLAG; then
+  shift 1
+  origin=$1
+fi
+
+if [ ${origin:0:1} != "/" ] && [ ${origin:0:1} != "~" ]; then
+  origin="$PWD/$origin"
+fi
+
+echo "Start pulling all git project in $origin."
+if [ -n $exclusive_path ]; then
+  echo "Exclude path: ${exclude_paths[@]}"
+fi
+
+find $origin -type d -name .git | xargs -n 1 dirname | sort | while read line; do echo $line ; contains $line ${exclude_paths[@]}; if [ $? -eq 0 ]; then echo "Passing..."; continue; fi  && cd $line && git pull && cd $origin; done
